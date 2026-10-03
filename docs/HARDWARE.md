@@ -24,7 +24,7 @@ code. Anything marked *TBD* has not been confirmed — do not guess it in code.
 
 | Function | Pin | Notes |
 |---|---|---|
-| Stepper STEP | D9 | A4988, **1/16 microstepping** (MS1-3 tied to 5 V): 3200 microsteps/rev. Vref 0.56 V |
+| Stepper STEP | D9 | A4988, Vref 0.56 V. The reference sheet says MS1-3 are tied to 5 V (1/16), **but on 3 Oct 2026 800 pulses gave ~4 turns, so the driver is really at full step**. Firmware uses `MICROSTEPS = 1` (50 pulses = 90°). If MS pins are rewired, change `MICROSTEPS` to match |
 | Stepper DIR | D10 | **HIGH = positive steps = CLOCKWISE** (confirmed 3 Oct 2026: `r` turns clockwise) |
 | Stepper ENABLE | D11 | LOW = driver on |
 | Servo signal | D6 | MG996R, powered at 6 V from the LM2596 buck converter, grounds shared. Never from the Arduino 5 V pin |
@@ -33,25 +33,27 @@ code. Anything marked *TBD* has not been confirmed — do not guess it in code.
 | OLED SDA / SCL | A4 / A5 | SSD1306, I2C address 0x3C |
 | Reserved | D0, D1 | Hardware serial - keep unused |
 
-## Bin map (confirmed by Selikem, 3 Oct 2026)
+## Bin map (confirmed by Selikem, 3 Oct 2026 - second version)
 
-HOME (step 0) is wherever the platform sits when the Arduino powers on — line it
-up over the PET compartment by hand before switching on. Compartments are
-numbered counter-clockwise from home. One compartment (a quarter turn) is **800 microsteps**.
-Top speed 600 microsteps/s, acceleration 1200 microsteps/s².
+HOME (position 0) is wherever the platform sits when the Arduino powers on -
+line it up over the PET compartment by hand before switching on (or use
+`JOG:<n>` then `HOME` from the Serial Monitor). 90° = 50 full steps.
+After every drop the platform returns HOME, so moving between two bins
+always passes through home.
 
-| Outcome | Compartment | Stepper move from HOME | Target position (steps) | Then |
+| Outcome | Compartment | Stepper move from HOME | Target (pulses at full step) | Then |
 |---|---|---|---|---|
-| PET (model class `PLASTIC`) | 1 | none (already there) | 0 | tip right, level |
-| PAPER (`PAPER`) | 2 | 90° counter-clockwise | −800 | tip right, level, return home |
-| ALUMINIUM (`METAL`) | 3 | 180° counter-clockwise | −1600 | tip right, level, return home |
-| REJECT (`OTHER` or any failed rule) | 4 | 90° clockwise | +800 | tip right, level, return home |
+| PET (model class `PLASTIC`) | 1 | none (already there) | 0 | pause 0.5 s, tip right, level |
+| PAPER (`PAPER`) | 2 | 90° clockwise | +50 | pause 0.5 s, tip right, level, return home |
+| ALUMINIUM (`METAL`) | 3 | 90° counter-clockwise | −50 | pause 0.5 s, tip right, level, return home |
+| REJECT (`OTHER` or any failed rule) | 4 | 180° counter-clockwise | −100 | pause 0.5 s, tip right, level, return home |
 
 The servo **always tips right** (LEVEL 90° → 130°, i.e. `LEVEL + TILT_RIGHT`).
 
-> Conflicts: the project doc Table 4 lists *Reject 0° (home), PET 90°, Paper 180°,
-> Al −90°*, and the component reference lists *1 PET, 2 Aluminium, 3 Paper*.
-> Selikem confirmed the table above (PET, Paper, Aluminium, Reject) on 3 Oct 2026.
+> History: the project doc Table 4 had *Reject 0° (home), PET 90°, Paper 180°,
+> Al −90°*; the component reference had *1 PET, 2 Aluminium, 3 Paper*; an
+> earlier version of this file had Paper 90° CCW / Al 180° CCW / Reject 90° CW.
+> The table above replaces all of them.
 > The reference's own serial protocol, points and 3-frame/0.60 model rule are
 > **not** used: the tested protocol in `PROTOCOL.md` and the project-doc reject
 > rule (5 frames, 4 agree, 0.70) stay (decided 3 Oct 2026).
