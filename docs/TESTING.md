@@ -33,8 +33,9 @@ and `replast/decision.py ... 100%` in the coverage table.
 ## Level 1b — firmware host test (no Arduino needed)
 
 Compiles the **real** `replast_controller.ino` on the Pi/laptop with pretend
-hardware and checks every route, STOP, RESET, busy/unknown commands and the IR
-debounce:
+hardware and checks every route (rotation to the right bin, tip right, back home),
+STOP, RESET, busy/unknown commands, the IR debounce, the buzzer beep and every
+OLED screen, and that the screen is never redrawn while the motor is turning:
 
 ```bash
 ./arduino/host_test/run.sh

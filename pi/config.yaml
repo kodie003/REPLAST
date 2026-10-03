@@ -47,7 +47,7 @@ serial:
   baud: 9600
   read_timeout_s: 0.1    # how long one readline() blocks; keeps the loop responsive
   ack_timeout_s: 1.0     # ACK is sent before any movement, so it should be near-instant
-  done_timeout_s: 15.0   # longest route (aluminium) is ~5 s; 3x margin
+  done_timeout_s: 20.0   # longest route (aluminium, 2 bins out and back) is ~8.7 s; >2x margin
   ping_timeout_s: 1.0
   ping_retries: 3        # three missed PONGs in a row = link is dead
   ready_timeout_s: 4.0   # opening the port can restart the Arduino; wait for READY

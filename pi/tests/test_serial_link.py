@@ -231,7 +231,7 @@ def test_clear_pending_object():
 def test_link_from_config_uses_config_values():
     link = link_from_config(load_config(), port=SimulatedArduino())
     assert link.ack_timeout_s == 1.0
-    assert link.done_timeout_s == 15.0
+    assert link.done_timeout_s == 20.0
     assert link.ping_retries == 3
 
 
