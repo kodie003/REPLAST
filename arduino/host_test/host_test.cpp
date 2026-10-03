@@ -5,7 +5,7 @@
 #include "Arduino.h"
 #include "Servo.h"
 #include "Wire.h"
-#include "Adafruit_SSD1306.h"
+#include "U8x8lib.h"
 #include <cstdio>
 
 uint64_t g_us = 0; int g_ir = 100; long g_steps = 0; int g_dir = 0; int g_pins[32] = {0};

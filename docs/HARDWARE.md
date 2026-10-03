@@ -9,7 +9,7 @@ code. Anything marked *TBD* has not been confirmed — do not guess it in code.
 |---|---|---|
 | Computer | Raspberry Pi 5 Model B Rev 1.0 | `cat /proc/device-tree/model`, 3 Oct 2026 |
 | OS | Ubuntu 24.04.5 LTS (noble) → Python 3.12 | `lsb_release -a`, 3 Oct 2026 |
-| Microcontroller | Arduino UNO R4 WiFi, USB serial to the Pi | project doc §7.1 |
+| Microcontroller | **To confirm:** parts list says UNO R4 WiFi, but the IDE was set to classic "Arduino Uno" on 3 Oct 2026. The sketches compile for both; pick the board you really have in Tools → Board | project doc §7.1, IDE error log |
 | Serial port | `/dev/ttyACM0` | `ls /dev/ttyACM*`, 3 Oct 2026 |
 | Baud | 9600 (matches every existing sketch) | |
 | Camera | Logitech C270, OpenCV index 0, captured at 640×480 | `pi/known_good/test_camera.py` |
@@ -73,8 +73,11 @@ the problem is the hardware or the new code.
 
 `arduino/replast_controller/replast_controller.ino` - the bin map lives in its
 `ROUTES` table (and must match the table above). It also drives the buzzer and
-OLED (screens listed in `PROTOCOL.md`). Needs the **Adafruit SSD1306** library
-(Arduino IDE → Tools → Manage Libraries; accept Adafruit GFX and BusIO too). IR threshold values at the top
+OLED (screens listed in `PROTOCOL.md`). Needs the **U8g2** library by oliver
+(Arduino IDE → Tools → Manage Libraries). U8g2's text-only U8x8 mode is used
+because the Adafruit SSD1306 library needs 1 KB of RAM for a screen buffer,
+which a classic Uno (2 KB total) cannot spare. Compile-checked on 3 Oct 2026:
+classic Uno 14.5 KB flash / 1414 B RAM (634 B free); UNO R4 WiFi 79 KB / 10 KB. IR threshold values at the top
 of that file are **placeholders until `arduino/tests/ir_check` results are in**.
 
 ## Model

@@ -24,7 +24,7 @@
     RESET. The driver stays enabled so the step count stays correct.
   * Every movement has a time limit. Exceeding it = halt + ERR:TIMEOUT.
   * The OLED is only redrawn while the stepper is NOT turning (a redraw
-    takes ~25 ms and would make the motor stutter). If the OLED is missing
+    takes several ms and would make the motor stutter). If the OLED is missing
     or broken, the machine still sorts.
 
   Wiring (docs/HARDWARE.md)
@@ -32,9 +32,12 @@
     MG996R servo D6 (6 V from the buck converter, shared GND)
     Sharp IR sensor A2, passive buzzer D5, SSD1306 OLED on A4 (SDA) / A5 (SCL), address 0x3C
 
+  Works on BOTH the classic Arduino Uno (R3) and the UNO R4 WiFi: pick the
+  board you actually have in Tools -> Board.
+
   Libraries (Arduino IDE -> Tools -> Manage Libraries):
-    "Adafruit SSD1306" (say yes to installing Adafruit GFX and BusIO too).
-    Servo and Wire come with the board.
+    "U8g2" by oliver (text-only U8x8 mode: needs no screen memory, which the
+    classic Uno's 2 KB RAM could not spare). Servo and Wire come with the IDE.
 
   HOME = where the platform is at power-on. Line it up over the PET
   compartment (compartment 1) by hand BEFORE switching on.
@@ -45,8 +48,7 @@
 
 #include <Servo.h>
 #include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+#include <U8x8lib.h>
 
 // ===================== BIN MAP (the only place routes live) ==============
 // Positions are in microsteps from HOME. 1/16 microstepping:
@@ -63,10 +65,11 @@ struct Route {
 const long STEPS_PER_BIN = 800;
 
 const Route ROUTES[] = {
-  { "SORT_PET",   0,                  "PLASTIC", "PET -> bin 1"       },
-  { "SORT_PAPER", -1 * STEPS_PER_BIN, "PAPER",   "Paper -> bin 2"     },
-  { "SORT_AL",    -2 * STEPS_PER_BIN, "METAL",   "Aluminium -> bin 3" },
-  { "REJECT",     +1 * STEPS_PER_BIN, "REJECT",  "Unsure -> bin 4"    },
+  // title: max 8 characters, detail: max 16 characters (screen width)
+  { "SORT_PET",   0,                  "PLASTIC", "PET -> bin 1"    },
+  { "SORT_PAPER", -1 * STEPS_PER_BIN, "PAPER",   "Paper -> bin 2"  },
+  { "SORT_AL",    -2 * STEPS_PER_BIN, "METAL",   "Alumin. -> bin 3" },
+  { "REJECT",     +1 * STEPS_PER_BIN, "REJECT",  "Unsure -> bin 4" },
 };
 const int NUM_ROUTES = sizeof(ROUTES) / sizeof(ROUTES[0]);
 // The servo always tips RIGHT (SERVO_TIP below), on every route.
@@ -109,7 +112,8 @@ const uint8_t OLED_ADDRESS = 0x3C;
 const unsigned long SCAN_AFTER_MS  = 700;   // "ITEM IN" -> "SCANNING"
 const unsigned long SORTED_SHOW_MS = 2500;  // "SORTED" -> "READY"
 
-Adafruit_SSD1306 oled(128, 64, &Wire, -1);
+// Text-only driver: 16 columns x 8 rows of 8x8-pixel characters.
+U8X8_SSD1306_128X64_NONAME_HW_I2C oled(U8X8_PIN_NONE);
 bool oledOk = false;
 
 enum Screen { SCR_READY, SCR_ITEM, SCR_SCANNING, SCR_SORTING, SCR_DROPPING, SCR_SORTED, SCR_STOPPED };
@@ -180,28 +184,22 @@ void enterPhase(Phase p) {
 
 // ===================== 4. DISPLAY ========================================
 
-// Draw one screen: a big word on top and two small lines under it.
+// Draw one screen: a big word on top (max 8 characters) and two small
+// lines under it (max 16 characters each).
 // Only call this when the stepper is not turning (see "Safety" above).
 void showScreen(Screen s, const char *big, const char *line2, const char *line3) {
   screen = s;
   screenSince = millis();
   if (!oledOk) return;
-  oled.clearDisplay();
-  oled.setTextColor(SSD1306_WHITE);
-  oled.setTextSize(2);           // 10 characters per line
-  oled.setCursor(0, 0);
-  oled.println(big);
-  oled.setTextSize(1);           // 21 characters per line
-  oled.setCursor(0, 28);
-  oled.println(line2);
-  oled.setCursor(0, 44);
-  oled.println(line3);
-  oled.display();
+  oled.clear();
+  oled.draw2x2String(0, 0, big);  // double size: rows 0-1
+  oled.drawString(0, 4, line2);
+  oled.drawString(0, 6, line3);
 }
 
 void showReady()    { showScreen(SCR_READY, "READY", "Place ONE item", "on the platform"); }
 void showItemIn()   { showScreen(SCR_ITEM, "ITEM IN", "Item detected", "Please wait..."); }
-void showScanning() { showScreen(SCR_SCANNING, "SCANNING", "Camera is checking", "the material..."); }
+void showScanning() { showScreen(SCR_SCANNING, "SCANNING", "Camera checking", "the material..."); }
 
 // Timed screen changes. Only happen while IDLE, so the stepper is still.
 void updateScreenTimers() {
@@ -331,7 +329,7 @@ void fail(const char *code) {
   haltMotors();
   enterPhase(STOPPED);
   reply2("ERR:", code);
-  showScreen(SCR_STOPPED, "ERROR", code, "Waiting for RESET");
+  showScreen(SCR_STOPPED, "ERROR", code, "Needs RESET");
 }
 
 bool timedOut(unsigned long limitMs) {
@@ -432,7 +430,7 @@ void handleCommand(char *cmd) {
     activeRoute = NULL;
     enterPhase(STOPPED);
     reply("STOPPED");
-    showScreen(SCR_STOPPED, "STOPPED", "Motors halted", "Waiting for RESET");
+    showScreen(SCR_STOPPED, "STOPPED", "Motors halted", "Needs RESET");
     return;
   }
 
@@ -492,16 +490,25 @@ void setup() {
   tipper.attach(PIN_SERVO);
   tipper.write(SERVO_LEVEL);
 
-  analogReadResolution(10);        // 0..1023, same scale as ir_check.ino
+#if !defined(ARDUINO_ARCH_AVR)
+  analogReadResolution(10);        // R4: force 0..1023 (a classic Uno is always 0..1023)
+#endif
   pinMode(PIN_IR, INPUT);
 
   Serial.begin(9600);
   unsigned long t0 = millis();
   while (!Serial && millis() - t0 < 2000) { }
 
+  // Is the OLED there? (The library would happily "draw" to nothing.)
   Wire.begin();
-  Wire.setClock(400000);           // fast I2C: a full redraw takes ~25 ms instead of ~100 ms
-  oledOk = oled.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS);
+  Wire.beginTransmission(OLED_ADDRESS);
+  oledOk = (Wire.endTransmission() == 0);
+  if (oledOk) {
+    oled.setI2CAddress(OLED_ADDRESS * 2);   // the library wants the 8-bit form (0x78)
+    oled.setBusClock(400000);              // fast I2C so a redraw is short
+    oledOk = oled.begin();
+    oled.setFont(u8x8_font_chroma48medium8_r);
+  }
   if (!oledOk) Serial.println("# OLED not found at 0x3C - running without display");
   showScreen(SCR_READY, "REPLAST", "Starting...", "");
 

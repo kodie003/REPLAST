@@ -181,7 +181,9 @@ void setup() {
   unsigned long t0 = millis();
   while (!Serial && millis() - t0 < 3000) { }
 
-  analogReadResolution(10);  // 0..1023, same scale as the old sketch
+#if !defined(ARDUINO_ARCH_AVR)
+  analogReadResolution(10);        // R4: force 0..1023 (a classic Uno is always 0..1023)
+#endif
   pinMode(PIN_IR, INPUT);
   clearStats(emptyStats);
   clearStats(itemStats);
