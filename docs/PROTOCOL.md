@@ -25,11 +25,12 @@ assumes something is wrong and stops sending movement orders.
 | Command | Meaning | Replies |
 |---|---|---|
 | `PING` | "Are you alive?" | `PONG` |
+| `STATUS` | Debug snapshot (for the test scripts and hand testing) | `STATUS:<phase>,POS=<steps>,SERVO=<deg>,IR=<reading>,ITEM=<0/1>` |
 | `SORT_PET` | Tip into compartment 1 (home, no rotation) | `ACK:SORT_PET` … `DONE:SORT_PET` |
 | `SORT_PAPER` | Rotate 90° counter-clockwise, tip, return home | `ACK:SORT_PAPER` … `DONE:SORT_PAPER` |
 | `SORT_AL` | Rotate 180° counter-clockwise, tip, return home | `ACK:SORT_AL` … `DONE:SORT_AL` |
 | `REJECT` | Rotate 90° clockwise, tip, return home | `ACK:REJECT` … `DONE:REJECT` |
-| `RESET` | Level the servo, drive the stepper back to step 0, clear any error/stop | `ACK:RESET` … `DONE:RESET` |
+| `RESET` | Level the servo, drive the stepper back to step 0, clear any error/stop. `STOP` followed by `RESET` is also how to recover after any error. | `ACK:RESET` … `DONE:RESET` |
 | `STOP` | Software stop: halt motors now, refuse movement until `RESET` | `STOPPED` |
 
 There is no physical E-stop and no load cell, so there is no `WEIGH` or `TARE`.
@@ -49,6 +50,8 @@ when something goes wrong mid-cycle.
 | `ERR:<code>` | Something went wrong (see below). |
 | `STOPPED` | Motors halted after `STOP`. |
 
+The IR sensor is ignored while the platform is moving. An item must be seen steadily for 0.5 s before `OBJECT`, and the platform must look empty for 0.3 s before `CLEAR`. If no `CLEAR` arrives after a sort's `DONE`, the item is probably stuck.
+
 Lines starting with `#` are debug comments; the Pi ignores them. Any other
 unknown line is also ignored (and logged), never acted on.
 
@@ -59,7 +62,7 @@ unknown line is also ignored (and logged), never acted on.
 | `ERR:BUSY` | An order arrived while a move was running | Treats the cycle as failed; waits, then `RESET` |
 | `ERR:UNKNOWN_CMD` | Misspelt/unknown order | Logs a software bug; no movement happened |
 | `ERR:STOPPED` | Movement order arrived after `STOP` and before `RESET` | Sends `RESET` only when it's safe |
-| `ERR:TIMEOUT` | A move took longer than the firmware's own limit | Stops the cycle, logs an error |
+| `ERR:TIMEOUT` | A move took longer than the firmware's own limit (4 s stepper, 3 s servo). The Arduino halts and behaves as if `STOP` was sent | Stops the cycle, logs an error |
 
 ## A normal cycle, line by line
 
@@ -78,7 +81,7 @@ Arduino → Pi   CLEAR                   (item has fallen off)
 | Setting | Default | Why |
 |---|---|---|
 | `ack_timeout_s` | 1.0 | ACK is sent before any movement, so it should be near-instant |
-| `done_timeout_s` | 15.0 | Longest route (aluminium, 180° there and back + tip) takes roughly 5 s; 3× margin |
+| `done_timeout_s` | 15.0 | Longest route (aluminium) takes 4.6 s in the firmware host test; 3× margin |
 | `ping_retries` | 3 | One lost line shouldn't kill the link; three in a row means it's dead |
 | `ready_timeout_s` | 4.0 | Opening the port may restart the Arduino; wait this long for `READY` |
 
@@ -96,3 +99,12 @@ sudo usermod -aG dialout $USER   # if not; then log out and back in (or reboot)
 "Permission denied: '/dev/ttyACM0'" means the `dialout` step is needed.
 Close the Arduino IDE's Serial Monitor before running Pi code — only one
 program can hold the port at a time.
+
+## Measured route times (firmware host test, `arduino/host_test`)
+
+| Command | Time to DONE |
+|---|---|
+| `SORT_PET` | 2.4 s (no rotation: settle, tip, hold 1 s, level) |
+| `SORT_PAPER` | 3.5 s |
+| `SORT_AL` | 4.6 s |
+| `REJECT` | 3.5 s |
