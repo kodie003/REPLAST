@@ -26,11 +26,13 @@ assumes something is wrong and stops sending movement orders.
 |---|---|---|
 | `PING` | "Are you alive?" | `PONG` |
 | `STATUS` | Debug snapshot (for the test scripts and hand testing) | `STATUS:<phase>,POS=<steps>,SERVO=<deg>,IR=<reading>,ITEM=<0/1>` |
-| `SORT_PET` | Tip into compartment 1 (home, no rotation) | `ACK:SORT_PET` … `DONE:SORT_PET` |
-| `SORT_PAPER` | Rotate 1 bin (800 microsteps) counter-clockwise, tip, return home | `ACK:SORT_PAPER` … `DONE:SORT_PAPER` |
-| `SORT_AL` | Rotate 2 bins (1600 microsteps) counter-clockwise, tip, return home | `ACK:SORT_AL` … `DONE:SORT_AL` |
-| `REJECT` | Rotate 1 bin (800 microsteps) clockwise, tip, return home | `ACK:REJECT` … `DONE:REJECT` |
+| `SORT_PET` | Compartment 1 is home: pause 0.5 s, tip, level (no rotation) | `ACK:SORT_PET` … `DONE:SORT_PET` |
+| `SORT_PAPER` | Rotate 90° clockwise, pause 0.5 s, tip, return home | `ACK:SORT_PAPER` … `DONE:SORT_PAPER` |
+| `SORT_AL` | Rotate 90° counter-clockwise, pause 0.5 s, tip, return home | `ACK:SORT_AL` … `DONE:SORT_AL` |
+| `REJECT` | Rotate 180° counter-clockwise, pause 0.5 s, tip, return home | `ACK:REJECT` … `DONE:REJECT` |
 | `RESET` | Level the servo, drive the stepper back to step 0, clear any error/stop. `STOP` followed by `RESET` is also how to recover after any error. | `ACK:RESET` … `DONE:RESET` |
+| `JOG:<n>` | Hand test only: turn n pulses (+ clockwise, − counter-clockwise, max one turn) and stay there. `JOG:50` = 90° clockwise | `ACK:JOG` … `DONE:JOG`, then `# position now <n>` |
+| `HOME` | Hand test only: "the platform is exactly over PET now" - makes the current position 0 | `ACK:HOME`, `DONE:HOME` |
 | `STOP` | Software stop: halt motors now, refuse movement until `RESET` | `STOPPED` |
 
 There is no physical E-stop and no load cell, so there is no `WEIGH` or `TARE`.
@@ -85,8 +87,8 @@ Arduino → Pi   OBJECT
                 (Pi takes 5 photos, runs the model, decides PAPER)
 Pi → Arduino   SORT_PAPER
 Arduino → Pi   ACK:SORT_PAPER          (within 1 s)
-                (rotate 90° CCW, tip right, level, rotate back home)
-Arduino → Pi   DONE:SORT_PAPER         (within 20 s)
+                (rotate 90° CW, pause, tip right, level, rotate back home)
+Arduino → Pi   DONE:SORT_PAPER         (within 15 s)
 Arduino → Pi   CLEAR                   (item has fallen off)
 ```
 
@@ -95,7 +97,7 @@ Arduino → Pi   CLEAR                   (item has fallen off)
 | Setting | Default | Why |
 |---|---|---|
 | `ack_timeout_s` | 1.0 | ACK is sent before any movement, so it should be near-instant |
-| `done_timeout_s` | 20.0 | Longest route (aluminium) takes 8.7 s in the firmware host test; >2× margin |
+| `done_timeout_s` | 15.0 | Longest route (reject, 180°) takes 4.5 s in the firmware host test; >3× margin |
 | `ping_retries` | 3 | One lost line shouldn't kill the link; three in a row means it's dead |
 | `ready_timeout_s` | 4.0 | Opening the port may restart the Arduino; wait this long for `READY` |
 
@@ -118,10 +120,10 @@ program can hold the port at a time.
 
 | Command | Time to DONE |
 |---|---|
-| `SORT_PET` | 2.4 s (no rotation: settle, tip, hold 1 s, level) |
-| `SORT_PAPER` | 6.0 s |
-| `SORT_AL` | 8.7 s |
-| `REJECT` | 6.0 s |
+| `SORT_PET` | 2.7 s (no rotation: 0.5 s pause, tip, hold 1 s, level) |
+| `SORT_PAPER` | 3.7 s |
+| `SORT_AL` | 3.7 s |
+| `REJECT` | 4.5 s |
 
-Stepper: 600 microsteps/s top speed, 1200 microsteps/s² acceleration (1/16 microstepping).
-One bin (800 microsteps) takes about 1.8 s each way.
+Stepper at full step (MICROSTEPS = 1): 50 pulses = 90°, speeds from the known-good
+sketch (50 → 125 steps/s). A 90° move takes about 0.5 s each way.

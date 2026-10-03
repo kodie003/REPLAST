@@ -16,11 +16,11 @@ Reply = tuple[float, str]
 # Seconds from command to DONE, measured by running the real firmware in
 # arduino/host_test (rotate out + settle + tip + hold + level + rotate home).
 ROUTE_SECONDS = {
-    "SORT_PET": 2.4,
-    "SORT_PAPER": 6.0,
-    "SORT_AL": 8.7,
-    "REJECT": 6.0,
-    "RESET": 0.4,
+    "SORT_PET": 2.7,
+    "SORT_PAPER": 3.7,
+    "SORT_AL": 3.7,
+    "REJECT": 4.5,
+    "RESET": 0.5,
 }
 
 
