@@ -24,7 +24,7 @@ void tick() {
   int before = g_redraws;
   // A redraw in the middle of a stepper move would make the motor stutter.
   // (Drawing right before the first step, or right after STOP halted it, is fine.)
-  auto turning = [] { return (phase == MOVE_OUT || phase == MOVE_HOME) && moveDone > 0 && moveDone < moveTotal; };
+  auto turning = [] { return (phase == MOVE_OUT || phase == MOVE_HOME || phase == JOGGING) && moveDone > 0 && moveDone < moveTotal; };
   bool wasTurning = turning();
   loop();
   if (wasTurning && turning() && g_redraws != before) g_redraws_while_turning++;
@@ -63,7 +63,11 @@ int main() {
 
   // --- 1 + 2: every route rotates to the right bin, tips right, comes home ---
   struct { const char *c; long target; const char *title; } routes[] = {
-    {"SORT_PET", 0, "PLASTIC"}, {"SORT_PAPER", -800, "PAPER"}, {"SORT_AL", -1600, "METAL"}, {"REJECT", 800, "REJECT"}};
+    {"SORT_PET", 0, "PLASTIC"},
+    {"SORT_PAPER", +STEPS_PER_BIN, "PAPER"},      //  90 deg clockwise
+    {"SORT_AL", -STEPS_PER_BIN, "METAL"},         //  90 deg counter-clockwise
+    {"REJECT", -2 * STEPS_PER_BIN, "REJECT"}};    // 180 deg counter-clockwise
+  CHECK(STEPS_PER_BIN == 50 * MICROSTEPS);        // 50 full steps = 90 degrees
   for (auto &r : routes) {
     maxServo = 0; minSteps = 0; maxSteps = 0;
     Serial.send(std::string(r.c) + "\n");
@@ -85,15 +89,15 @@ int main() {
   o = cmd("sort_glass", 0.1); CHECK(o == "ERR:UNKNOWN_CMD\n");
 
   // busy
-  Serial.send("SORT_AL\n"); runFor(0.5);
-  o = cmd("REJECT", 0.05); CHECK(o.find("ERR:BUSY") != std::string::npos);
+  Serial.send("REJECT\n"); runFor(0.4);
+  o = cmd("SORT_PAPER", 0.05); CHECK(o.find("ERR:BUSY") != std::string::npos);
   o = cmd("PING", 0.05); CHECK(o.find("PONG") != std::string::npos);
 
   // STOP mid-move freezes the stepper and blocks movement until RESET
   o = cmd("STOP", 0.05); CHECK(o.find("STOPPED") != std::string::npos);
   CHECK(on("STOPPED"));
   long held = g_steps; printf("stopped at microstep %ld\n", held);
-  runFor(2); CHECK(g_steps == held); CHECK(held < 0 && held > -1600);
+  runFor(2); CHECK(g_steps == held); CHECK(held < 0 && held > -2 * STEPS_PER_BIN);
   o = cmd("SORT_PET", 0.1); CHECK(o == "ERR:STOPPED\n");
   double t = timeTo("RESET", "DONE:RESET");
   printf("RESET took %.2fs, pos %ld servo %d\n", t, g_steps, g_servo);
@@ -124,6 +128,32 @@ int main() {
   g_ir = 400; runFor(1); Serial.send("SORT_PAPER\n"); runFor(1.0); g_ir = 100; o = runFor(8);
   CHECK(o.find("DONE:SORT_PAPER") != std::string::npos);
   CHECK(o.find("DONE:SORT_PAPER") < o.find("CLEAR"));
+
+  // 0.5 s pause between arriving at the bin and starting to tip
+  {
+    Serial.send("SORT_PAPER\n");
+    uint64_t arrived = 0, tipStart = 0;
+    for (int k = 0; k < 200000 && !tipStart; k++) {
+      tick();
+      if (!arrived && g_steps == STEPS_PER_BIN) arrived = g_us;
+      if (arrived && g_servo > 90) tipStart = g_us;
+    }
+    double pause = (tipStart - arrived) / 1e6;
+    printf("pause between arriving and tipping: %.2f s\n", pause);
+    CHECK(pause >= 0.5 && pause < 0.6);
+    timeTo("", "DONE:SORT_PAPER");
+  }
+
+  // JOG turns exactly n pulses and stays there; HOME makes that the new 0
+  o = cmd("JOG:50", 2.0);
+  CHECK(o.find("DONE:JOG") != std::string::npos);
+  CHECK(g_steps == 50); CHECK(position == 50); CHECK(g_servo == 90);
+  o = cmd("JOG:-75", 2.0); CHECK(g_steps == -25); CHECK(position == -25);
+  o = cmd("JOG:0", 0.1); CHECK(o == "ERR:BAD_JOG\n");
+  o = cmd("JOG:99999", 0.1); CHECK(o == "ERR:BAD_JOG\n");
+  o = cmd("HOME", 0.1); CHECK(o == "ACK:HOME\nDONE:HOME\n"); CHECK(position == 0);
+  g_steps = 0;   // the pretend motor's counter follows the new home
+  timeTo("SORT_PAPER", "DONE:SORT_PAPER"); CHECK(g_steps == 0);
 
   // overflow line
   o = cmd("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", 0.05); CHECK(o == "ERR:UNKNOWN_CMD\n");
