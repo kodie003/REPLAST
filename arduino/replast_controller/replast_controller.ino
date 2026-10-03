@@ -1,5 +1,5 @@
 /*
-  REPLAST - main controller (Arduino UNO R4 WiFi)
+  REPLAST - main controller (classic Arduino Uno; also compiles for the UNO R4 WiFi)
 
   The four jobs this sketch does (search for the function names):
     1. ROTATE the NEMA 17 to the right compartment ..... startRotation(), updateRotation()

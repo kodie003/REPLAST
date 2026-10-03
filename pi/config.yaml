@@ -9,7 +9,10 @@ model:
   imgsz: 512
 
 camera:
-  index: 0               # /dev/video0
+  # "auto" finds the C270 by itself. On a Pi 5, /dev/video0 is NOT the webcam
+  # (the Pi's own video chips take the low numbers). To force one, put a path
+  # such as /dev/video8 or /dev/v4l/by-id/usb-046d_...-video-index0
+  index: auto
   width: 640
   height: 480
   flush_frames: 4        # old frames thrown away before each capture (webcam buffer)

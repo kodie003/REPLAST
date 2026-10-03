@@ -42,7 +42,7 @@ def test_shipped_serial_commands(cfg):
 
 def test_model_settings_match_known_good_camera_script(cfg):
     assert cfg["model"]["imgsz"] == 512
-    assert (cfg["camera"]["index"], cfg["camera"]["width"], cfg["camera"]["height"]) == (0, 640, 480)
+    assert (cfg["camera"]["index"], cfg["camera"]["width"], cfg["camera"]["height"]) == ("auto", 640, 480)
     assert cfg["serial"]["baud"] == 9600
 
 

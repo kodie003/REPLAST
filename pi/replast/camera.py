@@ -8,19 +8,44 @@ platform NOW, not the empty platform from a moment ago.
 
 from __future__ import annotations
 
+import glob
 import time
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 
 class CameraError(RuntimeError):
     pass
 
 
+def candidate_devices(
+    by_id: Optional[list[str]] = None, video_nodes: Optional[list[str]] = None
+) -> list[str]:
+    """Where to look for the USB webcam, best guess first.
+
+    On a Raspberry Pi 5 the first /dev/video* numbers belong to the Pi's own
+    video chips (they are NOT cameras), and the C270 lands on a higher number
+    that can change between boots. /dev/v4l/by-id/ gives USB cameras a
+    stable name, so try those first (Logitech / C270 before anything else),
+    then every /dev/video* node in order.
+    """
+    if by_id is None:
+        by_id = sorted(glob.glob("/dev/v4l/by-id/*-video-index0"))
+    if video_nodes is None:
+        video_nodes = sorted(glob.glob("/dev/video*"), key=lambda p: int("0" + "".join(c for c in p if c.isdigit())))
+    logitech = [p for p in by_id if "046d" in p.lower() or "c270" in p.lower() or "logitech" in p.lower()]
+    others = [p for p in by_id if p not in logitech]
+    out: list[str] = []
+    for p in logitech + others + video_nodes:
+        if p not in out:
+            out.append(p)
+    return out
+
+
 class Camera:
     def __init__(
         self,
-        index: int = 0,
+        index: Union[int, str] = "auto",   # "auto", a number, or a path like /dev/video8
         width: int = 640,
         height: int = 480,
         flush_frames: int = 4,
@@ -34,16 +59,41 @@ class Camera:
         self.frame_interval_s = frame_interval_s
         self.sleep = sleep
         self.cap: Any = None
+        self.device: Optional[str] = None   # which device actually opened
+
+    def _try_open(self, cv2: Any, dev: Union[int, str]) -> Any:
+        """Open dev and read one frame; None if it is not a working camera."""
+        cap = cv2.VideoCapture(dev, cv2.CAP_V4L2)
+        if not cap.isOpened():
+            cap.release()
+            return None
+        ok, frame = cap.read()
+        if not ok or frame is None:
+            cap.release()
+            return None
+        return cap
 
     def open(self) -> None:
         import cv2  # imported here so unit tests run without OpenCV
 
-        cap = cv2.VideoCapture(self.index, cv2.CAP_V4L2)
-        if not cap.isOpened():
-            cap = cv2.VideoCapture(self.index)  # fall back to OpenCV's default backend
-        if not cap.isOpened():
+        try:
+            cv2.setLogLevel(0)  # hide OpenCV's warnings while probing non-camera devices
+        except AttributeError:
+            pass
+        if str(self.index).lower() == "auto":
+            tried = candidate_devices()
+        else:
+            tried = [int(self.index) if str(self.index).isdigit() else str(self.index)]
+        cap = None
+        for dev in tried:
+            cap = self._try_open(cv2, dev)
+            if cap is not None:
+                self.device = str(dev)
+                break
+        if cap is None:
             raise CameraError(
-                f"cannot open camera {self.index}. Is the C270 plugged in? Check: ls /dev/video*"
+                f"no working camera found (tried: {', '.join(map(str, tried)) or 'nothing - no /dev/video* at all'}). "
+                "Is the C270 plugged in? List cameras with: v4l2-ctl --list-devices"
             )
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
@@ -78,7 +128,7 @@ class Camera:
 def camera_from_config(cfg: dict) -> Camera:
     c = cfg["camera"]
     return Camera(
-        index=int(c["index"]),
+        index=c.get("index", "auto"),
         width=int(c["width"]),
         height=int(c["height"]),
         flush_frames=int(c.get("flush_frames", 4)),

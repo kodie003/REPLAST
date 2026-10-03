@@ -31,10 +31,10 @@ def main() -> None:
     cam.frame_interval_s = 0
     try:
         cam.open()
-        run.check(f"camera {cfg['camera']['index']} opens", True)
+        run.check("camera opens", True, f"using {cam.device}")
     except CameraError as e:
-        run.check(f"camera {cfg['camera']['index']} opens", False, str(e))
-        print("  Check: ls /dev/video*   (the C270 is usually /dev/video0)")
+        run.check("camera opens", False, str(e))
+        print("  Check: v4l2-ctl --list-devices   (sudo apt install v4l-utils)")
         run.finish()
 
     try:
