@@ -28,7 +28,7 @@
     or broken, the machine still sorts.
 
   Wiring (docs/HARDWARE.md)
-    STEP D9, DIR D10 (HIGH = clockwise), ENABLE D11 (LOW = on), A4988 at 1/16 microstep
+    STEP D9, DIR D10 (HIGH = clockwise), ENABLE D11 (LOW = on), A4988 (MICROSTEPS below)
     MG996R servo D6 (6 V from the buck converter, shared GND)
     Sharp IR sensor A2, passive buzzer D5, SSD1306 OLED on A4 (SDA) / A5 (SCL), address 0x3C
 
@@ -50,11 +50,26 @@
 #include <Wire.h>
 #include <U8x8lib.h>
 
+// ===================== STEPPER RESOLUTION ================================
+// How many pulses the A4988 needs per full motor step. MUST match the
+// MS1/MS2/MS3 wiring:
+//   all three unconnected / LOW .... 1  (full step: 200 pulses per turn)
+//   MS1 HIGH ....................... 2
+//   MS2 HIGH ....................... 4
+//   MS1 + MS2 HIGH ................. 8
+//   MS1 + MS2 + MS3 HIGH ........... 16
+// 1 is what the machine does today (3 Oct 2026: 800 pulses turned the
+// platform about 4 full turns, i.e. the driver is at full step), and
+// what the known-good stepper sketch used. Check with "JOG:50" (should
+// be exactly 90 degrees clockwise at MICROSTEPS 1).
+const long MICROSTEPS = 1;
+const long STEPS_PER_BIN = 50 * MICROSTEPS;   // 90 degrees = 50 full steps
+
 // ===================== BIN MAP (the only place routes live) ==============
-// Positions are in microsteps from HOME. 1/16 microstepping:
-// 3200 microsteps per turn, 800 per compartment (90 degrees).
+// Positions are in pulses from HOME (= PET, compartment 1).
 // Positive = clockwise (DIR HIGH), negative = counter-clockwise.
-// Compartments are numbered counter-clockwise from home.
+// After every drop the platform returns HOME, so going e.g. from the
+// aluminium bin to the paper bin is: 90 CW back home, then 90 CW to paper.
 struct Route {
   const char *command;
   long target;          // where to rotate to before tipping
@@ -62,14 +77,12 @@ struct Route {
   const char *detail;   // second line on the screen
 };
 
-const long STEPS_PER_BIN = 800;
-
 const Route ROUTES[] = {
   // title: max 8 characters, detail: max 16 characters (screen width)
-  { "SORT_PET",   0,                  "PLASTIC", "PET -> bin 1"    },
-  { "SORT_PAPER", -1 * STEPS_PER_BIN, "PAPER",   "Paper -> bin 2"  },
-  { "SORT_AL",    -2 * STEPS_PER_BIN, "METAL",   "Alumin. -> bin 3" },
-  { "REJECT",     +1 * STEPS_PER_BIN, "REJECT",  "Unsure -> bin 4" },
+  { "SORT_PET",   0,                  "PLASTIC", "PET -> bin 1"    },  // home: just tip
+  { "SORT_PAPER", +1 * STEPS_PER_BIN, "PAPER",   "Paper -> bin 2"  },  //  90 deg clockwise
+  { "SORT_AL",    -1 * STEPS_PER_BIN, "METAL",   "Alumin. -> bin 3" },  //  90 deg counter-clockwise
+  { "REJECT",     -2 * STEPS_PER_BIN, "REJECT",  "Unsure -> bin 4" },  // 180 deg counter-clockwise
 };
 const int NUM_ROUTES = sizeof(ROUTES) / sizeof(ROUTES[0]);
 // The servo always tips RIGHT (SERVO_TIP below), on every route.
@@ -83,10 +96,15 @@ const uint8_t PIN_BUZZER = 5;
 const int     PIN_IR     = A2;
 
 // ===================== STEPPER ===========================================
-const float MAX_SPEED = 600.0;    // microsteps per second (reference sheet)
-const float ACCEL     = 1200.0;   // microsteps per second^2 (reference sheet)
-const unsigned long SETTLE_MS = 200;         // pause after arriving, before tipping
-const unsigned long MOVE_TIMEOUT_MS = 6000;  // 2 bins takes ~3.2 s; 6 s means something is wrong
+// Speeds in FULL steps, taken from the known-good sketch (20 ms/step at
+// the start and end of a move, 8 ms/step at full speed). Scaled by
+// MICROSTEPS below, so changing MICROSTEPS keeps the same real speed.
+const float START_SPEED = 50.0  * MICROSTEPS;   // pulses/s at the very start and end
+const float MAX_SPEED   = 125.0 * MICROSTEPS;   // pulses/s cruising
+const float ACCEL       = 500.0 * MICROSTEPS;   // pulses/s^2
+const unsigned long SETTLE_MS = 500;         // pause after turning, before tipping (asked for 3 Oct 2026)
+const unsigned long MOVE_TIMEOUT_MS = 6000;  // 180 deg takes ~1 s; 6 s means something is wrong
+const long MAX_JOG = 4 * STEPS_PER_BIN;      // JOG limit: one full turn
 
 // ===================== SERVO (same numbers as the known-good sketch) =====
 const int SERVO_LEVEL = 90;
@@ -129,10 +147,11 @@ enum Phase {
   TIP_HOLD,     // holding tipped while the item drops
   TIP_UP,       // servo returning level
   MOVE_HOME,    // rotating back to step 0
-  STOPPED       // after STOP or an error: nothing moves until RESET
+  STOPPED,      // after STOP or an error: nothing moves until RESET
+  JOGGING       // JOG command: turning by hand-test amount, no tipping
 };
 const char *PHASE_NAMES[] = {
-  "IDLE", "MOVE_OUT", "SETTLE", "TIP_DOWN", "TIP_HOLD", "TIP_UP", "MOVE_HOME", "STOPPED"
+  "IDLE", "MOVE_OUT", "SETTLE", "TIP_DOWN", "TIP_HOLD", "TIP_UP", "MOVE_HOME", "STOPPED", "JOGGING"
 };
 
 Phase phase = IDLE;
@@ -266,12 +285,13 @@ void checkForItem() {
 
 // ===================== 1. ROTATION (NEMA 17) =============================
 
-// Time between two microsteps for step number i of a move. Speeds up at
-// ACCEL until MAX_SPEED, cruises, then slows down the same way, so the
-// platform starts and stops gently (v = sqrt(2 * a * distance)).
+// Time between two pulses for pulse number i of a move. Starts at
+// START_SPEED, speeds up at ACCEL until MAX_SPEED, cruises, then slows
+// down the same way, so the platform starts and stops gently
+// (v = sqrt(v0^2 + 2 * a * distance)).
 unsigned long stepPeriodUs(long i, long total) {
-  long fromEdge = min(i, total - 1 - i);     // steps from the nearer end
-  float v = sqrt(2.0 * ACCEL * (fromEdge + 1));
+  long fromEdge = min(i, total - 1 - i);     // pulses from the nearer end
+  float v = sqrt(START_SPEED * START_SPEED + 2.0 * ACCEL * fromEdge);
   if (v > MAX_SPEED) v = MAX_SPEED;
   return (unsigned long)(1000000.0 / v);
 }
@@ -390,6 +410,16 @@ void updateSequence() {
       if (updateRotation()) finishCommand();
       else if (timedOut(MOVE_TIMEOUT_MS)) fail("TIMEOUT");
       break;
+
+    case JOGGING:
+      if (updateRotation()) {
+        enterPhase(IDLE);
+        reply2("DONE:", activeCmd);
+        activeCmd[0] = '\0';
+        Serial.print("# position now ");
+        Serial.println(position);
+      } else if (timedOut(MOVE_TIMEOUT_MS)) fail("TIMEOUT");
+      break;
   }
 }
 
@@ -443,6 +473,31 @@ void handleCommand(char *cmd) {
     // Level the servo first, then go home: reuse the end of the sort sequence.
     startTip(SERVO_LEVEL);
     enterPhase(TIP_UP);
+    return;
+  }
+
+  // JOG:<n> - turn n pulses (+ clockwise, - counter-clockwise) and stop
+  // there. For checking/adjusting the angle by hand from the Serial Monitor.
+  if (strncmp(cmd, "JOG:", 4) == 0) {
+    long n = atol(cmd + 4);
+    if (phase == STOPPED)  { reply("ERR:STOPPED"); return; }
+    if (phase != IDLE)     { reply("ERR:BUSY"); return; }
+    if (n == 0 || labs(n) > MAX_JOG) { reply("ERR:BAD_JOG"); return; }
+    strcpy(activeCmd, "JOG");
+    activeRoute = NULL;
+    reply2("ACK:", activeCmd);
+    startRotation(position + n);
+    enterPhase(JOGGING);
+    return;
+  }
+
+  // HOME - "the platform is now exactly over PET": make this position 0.
+  // Use after lining it up by hand or with JOG.
+  if (strcmp(cmd, "HOME") == 0) {
+    if (phase != IDLE && phase != STOPPED) { reply("ERR:BUSY"); return; }
+    position = 0;
+    reply("ACK:HOME");
+    reply("DONE:HOME");
     return;
   }
 
