@@ -1,0 +1,53 @@
+# REPLAST Pi configuration.
+# Every tunable number lives here so nobody has to edit code to change it.
+# Hardware facts (pins, bin positions) are documented in docs/HARDWARE.md.
+
+model:
+  # Folder exported by Ultralytics (contains model.ncnn.param / model.ncnn.bin).
+  path: /home/afful/Downloads/finetuned_ncnn_model
+  # Exported at 640, but test_camera.py runs it at 512 (faster, known to work).
+  imgsz: 512
+
+camera:
+  index: 0
+  width: 640
+  height: 480
+
+decision:
+  # Reject rule from project doc §6.3 / §9.4. Starting values; tune
+  # mean_conf with tools/threshold_sweep.py (0.50 -> 0.90 in 0.05 steps).
+  n_frames: 5            # frames captured per item
+  det_conf: 0.25         # boxes below this are ignored entirely
+  min_detected: 4        # rule 1: item must be seen in at least this many frames
+  min_agree: 4           # rule 3: at least this many frames must vote the same class
+  mean_conf: 0.70        # rule 4: mean confidence of agreeing frames must be >= this
+  second_obj_conf: 0.50  # rule 5: any box of a different class at >= this -> reject
+
+  # Model class name -> REPLAST outcome. Names must match the model's
+  # metadata.yaml (0 METAL, 1 OTHER, 2 PAPER, 3 PLASTIC). Any class not
+  # listed here is treated as unknown and rejected.
+  class_map:
+    PLASTIC: PET
+    METAL: ALUMINIUM
+    PAPER: PAPER
+    OTHER: REJECT
+
+  # Rule 6 (mass). DISABLED: there is no load cell on the machine.
+  # Kept so it can be switched on if a scale is ever fitted.
+  mass_check:
+    enabled: false
+    min_mass_g: 2.0      # always reject below this
+    ranges_g:            # placeholders from project doc §7 — calibrate before enabling
+      PET: [2.0, 75.0]
+      ALUMINIUM: [2.0, 75.0]
+      PAPER: [2.0, 75.0]
+
+serial:
+  port: /dev/ttyACM0
+  baud: 9600
+  # Outcome -> command sent to the Arduino (project doc Table 8).
+  commands:
+    PET: SORT_PET
+    ALUMINIUM: SORT_AL
+    PAPER: SORT_PAPER
+    REJECT: REJECT
