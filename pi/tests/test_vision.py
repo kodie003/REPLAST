@@ -68,3 +68,53 @@ def test_real_model_if_available():
     out = d.detect_many([np.zeros((480, 640, 3), "uint8")] * 2)
     assert len(out) == 2 and all(isinstance(x, list) for x in out)
     assert len(d.last_times_s) == 2
+
+
+def test_candidate_devices_prefers_the_logitech_by_id_name():
+    from replast.camera import candidate_devices
+    by_id = ["/dev/v4l/by-id/usb-Other_Cam-video-index0",
+             "/dev/v4l/by-id/usb-046d_0825_ABC-video-index0"]
+    nodes = ["/dev/video0", "/dev/video1", "/dev/video19", "/dev/video8"]
+    out = candidate_devices(by_id, nodes)
+    assert out[0] == "/dev/v4l/by-id/usb-046d_0825_ABC-video-index0"
+    assert out[1] == "/dev/v4l/by-id/usb-Other_Cam-video-index0"
+    assert out[2:] == nodes          # then every /dev/video* in the order given
+
+
+def test_candidate_devices_sorts_video_numbers_numerically(monkeypatch):
+    import replast.camera as cam
+    monkeypatch.setattr(cam.glob, "glob", lambda pat: [] if "by-id" in pat else
+                        ["/dev/video10", "/dev/video2", "/dev/video0"])
+    assert cam.candidate_devices() == ["/dev/video0", "/dev/video2", "/dev/video10"]
+
+
+def test_open_skips_devices_that_are_not_cameras(monkeypatch):
+    """Simulates a Pi 5: video0/video1 are the Pi's own chips, the C270 is video8."""
+    import sys, types
+    import replast.camera as cam
+
+    class Cap:
+        def __init__(self, dev, api=None):
+            self.dev = dev
+        def isOpened(self):
+            return self.dev != "/dev/video1"
+        def read(self):
+            return (True, "img") if self.dev == "/dev/video8" else (False, None)
+        def set(self, *a):
+            pass
+        def grab(self):
+            pass
+        def release(self):
+            pass
+
+    fake_cv2 = types.SimpleNamespace(VideoCapture=Cap, CAP_V4L2=200, CAP_PROP_FRAME_WIDTH=3,
+                                     CAP_PROP_FRAME_HEIGHT=4, CAP_PROP_BUFFERSIZE=38, setLogLevel=lambda n: None)
+    monkeypatch.setitem(sys.modules, "cv2", fake_cv2)
+    monkeypatch.setattr(cam, "candidate_devices", lambda: ["/dev/video0", "/dev/video1", "/dev/video8"])
+    c = Camera(index="auto")
+    c.open()
+    assert c.device == "/dev/video8"
+
+    monkeypatch.setattr(cam, "candidate_devices", lambda: ["/dev/video0", "/dev/video1"])
+    with pytest.raises(CameraError, match="no working camera found"):
+        Camera(index="auto").open()

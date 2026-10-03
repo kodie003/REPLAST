@@ -176,6 +176,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("Opening camera...")
         camera = camera_from_config(cfg)
         camera.open()
+        print(f"  camera: {camera.device}")
         print(f"Connecting to Arduino on {cfg['serial']['port']}...")
         link = link_from_config(cfg)
         link.connect(float(cfg["serial"]["ready_timeout_s"]))
