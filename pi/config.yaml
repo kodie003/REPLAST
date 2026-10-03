@@ -9,9 +9,17 @@ model:
   imgsz: 512
 
 camera:
-  index: 0
+  index: 0               # /dev/video0
   width: 640
   height: 480
+  flush_frames: 4        # old frames thrown away before each capture (webcam buffer)
+  frame_interval_s: 0.1  # gap between the 5 photos of one item
+
+machine:
+  db_path: data/replast.db       # transaction log (relative to pi/)
+  save_images: true              # keep the 5 photos of every item (useful for fine-tuning)
+  image_dir: data/captures
+  clear_timeout_s: 3.0           # after DONE, how long to wait for the IR to report CLEAR
 
 decision:
   # Reject rule from project doc §6.3 / §9.4. Starting values; tune

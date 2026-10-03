@@ -214,6 +214,20 @@ class SerialLink:
             return True
         return False
 
+    def wait_for_clear(self, timeout_s: float) -> bool:
+        """True once the Arduino reports CLEAR (platform empty). Used after a sort
+        to check the item really fell off."""
+        if not self.object_present:
+            return True
+        try:
+            if self._wait_for(lambda l: l == "CLEAR", timeout_s) is None:
+                return False
+        except SerialLinkError:
+            return False
+        self.object_present = False
+        self._object_pending = False
+        return True
+
     def clear_pending_object(self) -> None:
         """Forget an OBJECT seen earlier (e.g. one that arrived during the last sort)."""
         self._object_pending = False
