@@ -1,7 +1,7 @@
 """Talks to the Arduino over USB serial using the protocol in docs/PROTOCOL.md.
 
-The port is passed in from outside, so tests can hand over a fake Arduino
-(replast/fakes.py) instead of a real one. Only open_serial() touches pyserial.
+The port is passed in from outside, so tests can hand over a simulated Arduino
+(replast/simulator.py) instead of a real one. Only open_serial() touches pyserial.
 
 Safety rule built in here, at the lowest level: if a movement command fails
 in ANY way (no ACK, no DONE, ERR, unplugged cable), the link sends STOP
@@ -21,7 +21,7 @@ MOVE_COMMANDS = frozenset({"SORT_PET", "SORT_PAPER", "SORT_AL", "REJECT", "RESET
 
 
 class SerialPort(Protocol):
-    """The three methods we need from pyserial's Serial (or a fake)."""
+    """The three methods we need from pyserial's Serial (or the simulator)."""
 
     def write(self, data: bytes) -> Optional[int]: ...
     def readline(self) -> bytes: ...  # returns b"" when its short read timeout expires
@@ -188,6 +188,21 @@ class SerialLink:
         except SerialLinkError as e:
             log.error("STOP could not be confirmed: %s", e)
             return False
+
+    def read_reply(self, timeout_s: float) -> Optional[str]:
+        """Next reply line of any kind (including ERR:/STOPPED, without raising).
+        OBJECT/CLEAR and # comments are skipped. Used by the hardware test scripts."""
+        deadline = self.clock() + timeout_s
+        while self.clock() < deadline:
+            line = self._read_one()
+            if line is None or line.startswith("#"):
+                continue
+            if line in ("OBJECT", "CLEAR"):
+                self._object_pending = line == "OBJECT"
+                self.object_present = line == "OBJECT"
+                continue
+            return line
+        return None
 
     def wait_for_object(self, timeout_s: float) -> bool:
         """True as soon as the Arduino reports OBJECT (including one that arrived earlier)."""

@@ -1,9 +1,9 @@
-"""Tests for replast/serial_link.py using the FakeArduino (no hardware)."""
+"""Tests for replast/serial_link.py using the SimulatedArduino (no hardware)."""
 
 import pytest
 
 from replast.config import load_config
-from replast.fakes import FakeArduino, FakeClock
+from replast.simulator import ROUTE_SECONDS, SimClock, SimulatedArduino
 from replast.serial_link import (
     AckTimeout,
     ArduinoError,
@@ -16,8 +16,8 @@ from replast.serial_link import (
 
 
 def make(overrides=None):
-    clock = FakeClock()
-    ard = FakeArduino(clock, overrides)
+    clock = SimClock()
+    ard = SimulatedArduino(clock, overrides)
     link = SerialLink(ard, ack_timeout_s=1.0, done_timeout_s=15.0, ping_timeout_s=1.0,
                       ping_retries=3, clock=clock)
     return link, ard, clock
@@ -77,7 +77,7 @@ def test_command_happy_path(cmd):
     assert ard.commands() == [cmd]  # no STOP on success
     assert r.command == cmd
     assert r.ack_s == pytest.approx(0.02, abs=0.01)
-    assert r.done_s == pytest.approx(3.0, abs=0.01)
+    assert r.done_s == pytest.approx(ROUTE_SECONDS[cmd], abs=0.01)
 
 
 def test_unknown_command_is_refused_before_sending():
@@ -229,7 +229,7 @@ def test_clear_pending_object():
 # --- config -----------------------------------------------------------------
 
 def test_link_from_config_uses_config_values():
-    link = link_from_config(load_config(), port=FakeArduino())
+    link = link_from_config(load_config(), port=SimulatedArduino())
     assert link.ack_timeout_s == 1.0
     assert link.done_timeout_s == 15.0
     assert link.ping_retries == 3
@@ -239,3 +239,42 @@ def test_close():
     link, ard, _ = make()
     link.close()
     assert ard.closed
+
+
+# --- the simulator behaves like the firmware ---------------------------------
+
+def test_after_stop_movement_is_refused_until_reset():
+    link, ard, _ = make()
+    assert link.stop() is True
+    with pytest.raises(ArduinoError) as e:
+        link.run_command("SORT_PET")
+    assert e.value.code == "STOPPED"
+    link.run_command("RESET")
+    assert link.run_command("SORT_PET").command == "SORT_PET"
+
+
+def test_stop_mid_move_cancels_done():
+    link, ard, clock = make()
+    ard.write(b"SORT_AL\n")
+    clock.advance(1.0)
+    assert link.stop() is True
+    assert link._wait_for(lambda l: l.startswith("DONE"), 10.0) is None
+
+
+def test_second_command_while_moving_is_busy():
+    link, ard, clock = make()
+    ard.write(b"SORT_AL\n")
+    clock.advance(1.0)
+    ard.write(b"REJECT\n")
+    lines = [link._read_one() for _ in range(3)]
+    assert "ERR:BUSY" in lines
+
+
+def test_read_reply_returns_errors_without_raising():
+    link, ard, _ = make()
+    ard.push("#comment")
+    ard.push("OBJECT")
+    ard.push("ERR:BUSY")
+    assert link.read_reply(1.0) == "ERR:BUSY"
+    assert link.wait_for_object(0.0) is True
+    assert link.read_reply(0.5) is None
