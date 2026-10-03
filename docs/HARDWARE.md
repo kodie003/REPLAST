@@ -9,7 +9,7 @@ code. Anything marked *TBD* has not been confirmed — do not guess it in code.
 |---|---|---|
 | Computer | Raspberry Pi 5 Model B Rev 1.0 | `cat /proc/device-tree/model`, 3 Oct 2026 |
 | OS | Ubuntu 24.04.5 LTS (noble) → Python 3.12 | `lsb_release -a`, 3 Oct 2026 |
-| Microcontroller | **To confirm:** parts list says UNO R4 WiFi, but the IDE was set to classic "Arduino Uno" on 3 Oct 2026. The sketches compile for both; pick the board you really have in Tools → Board | project doc §7.1, IDE error log |
+| Microcontroller | **Classic Arduino Uno (R3)**, USB-B, 2 KB RAM. In the IDE choose Tools → Board → "Arduino Uno". (The parts list's UNO R4 WiFi is not what is fitted.) | Selikem, 3 Oct 2026 |
 | Serial port | `/dev/ttyACM0` | `ls /dev/ttyACM*`, 3 Oct 2026 |
 | Baud | 9600 (matches every existing sketch) | |
 | Camera | Logitech C270, OpenCV index 0, captured at 640×480 | `pi/known_good/test_camera.py` |
