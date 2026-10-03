@@ -1,0 +1,7 @@
+# Camera + model packages: install these on the Pi (big download, ~1-2 GB with PyTorch).
+# The unit tests do NOT need them, so a laptop can skip this file.
+-r requirements.txt
+opencv-python>=4.8
+ultralytics>=8.3
+ncnn>=1.0.20240410
+numpy
