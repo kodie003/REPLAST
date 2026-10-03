@@ -17,9 +17,9 @@ Reply = tuple[float, str]
 # arduino/host_test (rotate out + settle + tip + hold + level + rotate home).
 ROUTE_SECONDS = {
     "SORT_PET": 2.4,
-    "SORT_PAPER": 3.5,
-    "SORT_AL": 4.6,
-    "REJECT": 3.5,
+    "SORT_PAPER": 6.0,
+    "SORT_AL": 8.7,
+    "REJECT": 6.0,
     "RESET": 0.4,
 }
 
