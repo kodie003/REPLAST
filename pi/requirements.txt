@@ -1,6 +1,7 @@
 # Needed to run the REPLAST Pi code (Pi 5 / Ubuntu 24.04 / Python 3.12, or a laptop).
-# More packages (opencv, ultralytics, pyserial) are added as those modules land.
+# More packages (opencv, ultralytics) are added as those modules land.
 PyYAML>=6.0
+pyserial>=3.5
 
 # Testing
 pytest>=8.0
