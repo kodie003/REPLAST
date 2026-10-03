@@ -60,6 +60,12 @@ the problem is the hardware or the new code.
 | `ir_calibration.ino` | Averages 4 reads on A2; samples empty tray and items; prints `irThreshold` (midpoint) and `IR_HYSTERESIS` (gap/4, min 10). |
 | `test_camera.py` | Opens camera 0 at 640×480, runs the NCNN model at `imgsz=512`, `conf=0.25`, prints class + confidence + latency. |
 
+## Controller firmware
+
+`arduino/replast_controller/replast_controller.ino` - the bin map lives in its
+`ROUTES` table (and must match the table above). IR threshold values at the top
+of that file are **placeholders until `arduino/tests/ir_check` results are in**.
+
 ## Model
 
 - `finetuned_ncnn_model` from
