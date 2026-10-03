@@ -18,7 +18,7 @@ pytest -v          # every test, one line each
 pytest --cov       # same, plus how much of the code the tests touched
 ```
 
-Expected: a line ending `113 passed` (the number grows as modules are added),
+Expected: a line ending `137 passed, 1 skipped` (the skipped one runs the real model and only runs where the model is installed) (the number grows as modules are added),
 and `replast/decision.py ... 100%` in the coverage table.
 
 ### What is covered so far
@@ -28,6 +28,9 @@ and `replast/decision.py ... 100%` in the coverage table.
 | `tests/test_decision.py` | Each reject rule on its own, every boundary (4/5 vs 3/5 detected, mean conf exactly 0.70, second object exactly 0.50, mass exactly 2 g), ties (2/2/1), empty frames, all-OTHER, unknown classes, several reasons at once, and a 5 000-case random fuzz test that a non-REJECT verdict always satisfies every rule. |
 | `tests/test_serial_link.py` | Talking to a **simulated Arduino** (behaves like the real firmware) on a simulated clock: normal PING/sort/DONE, a lost PONG that is retried, missing ACK, missing DONE, every `ERR:` code, `STOPPED` mid-sort, junk and half-garbled lines, Windows line endings, cable pulled out. Every failed movement must be followed by `STOP`; after `STOP` nothing moves until `RESET`. |
 | `tests/test_hil_sim.py` | Runs `hil_serial.py` and `hil_mechanism.py` against the simulator so the hardware scripts never silently break. |
+| `tests/test_main.py` | The whole Pi cycle with a simulated camera, model and Arduino: each material reaches the right command and is logged; uncertain/OTHER items go to REJECT with the reason; camera or model failure sends the item to REJECT (never a material bin) and logs ERROR; no ACK/DONE/ERR stops the motors, logs ERROR and halts; a stuck item is flagged; 200 random items never reach a material bin without an OK decision. |
+| `tests/test_logger.py` | The SQLite log stores and re-opens rows; CSV export round-trips. |
+| `tests/test_vision.py` | Camera throws away stale frames before capturing, reports failures clearly; model class ids map to names; missing model folder gives a clear error; real-model test when available. |
 | `tests/test_config.py` | The shipped `config.yaml` still holds the project-doc numbers (a regression guard), and bad values (e.g. `mean_conf: 1.5`) are refused at start-up. |
 
 ## Level 1b — firmware host test (no Arduino needed)
@@ -52,9 +55,11 @@ Results go to `pi/results/*.csv`.
 
 | Script | What it checks | Run |
 |---|---|---|
+| `tools/hil_camera.py` | Camera opens, frame rate ≥ 10 fps, correct size, not black/blown out; saves 3 sample photos to look at (`--show` for a live window) | `python3 tools/hil_camera.py` |
+| `tools/hil_latency.py` | Model loads; for 10 items times 5 photos + 5 inferences + decision; prints what it saw; PASS if average ≤ 4.0 s | `python3 tools/hil_latency.py` |
 | `tools/hil_serial.py` | 10 PINGs, STATUS, unknown command refused, each movement command gets ACK + DONE (with timings), STOP blocks movement until RESET | `python3 tools/hil_serial.py` |
 | `tools/hil_mechanism.py` | Each route N times; after each route you confirm by eye it came back over PET and level; then STOP during a move must freeze the platform | `python3 tools/hil_mechanism.py --repeats 5` |
 
 Expected final line for both: `...: PASS (N passed, 0 failed)`.
 
-Level 2 (offline model evaluation) and the remaining HIL scripts come in later steps.
+The camera scripts need no Arduino. Level 2 (offline model evaluation), the full-cycle acceptance test and the endurance test come in later steps.

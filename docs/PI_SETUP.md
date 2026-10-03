@@ -39,6 +39,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+For the camera and model (big download, 10-20 minutes on the Pi):
+
+```bash
+pip install -r requirements-vision.txt
+```
+
 Your prompt now starts with `(.venv)`. Do `source .venv/bin/activate` again in
 every new terminal before running REPLAST code.
 
@@ -48,7 +54,8 @@ every new terminal before running REPLAST code.
 pytest -q
 ```
 
-Expected last line: `113 passed` (the number grows over time).
+Expected last line: `138 passed` once the model packages are installed
+(`137 passed, 1 skipped` without them).
 
 ## 5. Allow access to the Arduino's port (once)
 
