@@ -5,6 +5,8 @@
 #include <string>
 #include <deque>
 #include <algorithm>
+#include <cmath>
+using std::sqrt;
 using std::min;
 #define HIGH 1
 #define LOW 0
@@ -19,6 +21,8 @@ inline void delayMicroseconds(unsigned int us){g_us+=us;}
 inline void pinMode(int,int){}
 inline void digitalWrite(int p,int v){ if(p==9 && v==HIGH && g_pins[9]==LOW){ g_steps += g_dir? 1:-1; } if(p==10) g_dir=v; g_pins[p]=v; }
 inline int analogRead(int){return g_ir;}
+extern int g_beeps;
+inline void tone(int,unsigned int,unsigned long){g_beeps++;}
 inline void analogReadResolution(int){}
 struct SerialMock{
   std::deque<char> in; std::string out;
