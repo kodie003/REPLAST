@@ -278,3 +278,16 @@ def test_read_reply_returns_errors_without_raising():
     assert link.read_reply(1.0) == "ERR:BUSY"
     assert link.wait_for_object(0.0) is True
     assert link.read_reply(0.5) is None
+
+
+def test_wait_for_clear():
+    link, ard, _ = make()
+    assert link.wait_for_clear(0.5) is True          # nothing on the platform
+    ard.push("OBJECT")
+    link.wait_for_object(1.0)
+    ard.push("CLEAR", delay=1.0)
+    assert link.wait_for_clear(3.0) is True
+    assert link.object_present is False
+    ard.push("OBJECT")
+    link.wait_for_object(1.0)
+    assert link.wait_for_clear(1.0) is False          # still there

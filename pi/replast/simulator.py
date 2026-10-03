@@ -149,3 +149,46 @@ class SimulatedArduino:
         duration = ROUTE_SECONDS[cmd]
         self.busy_until = self.clock() + duration
         return [(0.02, f"ACK:{cmd}"), (duration, f"DONE:{cmd}")]
+
+
+class SimulatedCamera:
+    """Returns placeholder 'frames' (just numbers) instead of photos."""
+
+    def __init__(self, fail: bool = False):
+        self.fail = fail
+        self.captures = 0
+
+    def open(self) -> None:
+        pass
+
+    def capture(self, n: int) -> list:
+        from replast.camera import CameraError
+
+        if self.fail:
+            raise CameraError("simulated: camera unplugged")
+        self.captures += 1
+        return list(range(n))
+
+    def close(self) -> None:
+        pass
+
+
+class SimulatedDetector:
+    """Returns pre-set detections instead of running the model.
+
+    script: one entry per item; each entry is the list of per-frame detection
+    lists to return for that item.
+    """
+
+    def __init__(self, script: list, fail: bool = False):
+        self.script = list(script)
+        self.fail = fail
+        self.last_times_s: list[float] = []
+
+    def detect_many(self, frames: list) -> list:
+        from replast.detector import ModelError
+
+        if self.fail:
+            raise ModelError("simulated: inference failed")
+        self.last_times_s = [0.1] * len(frames)
+        return self.script.pop(0)
